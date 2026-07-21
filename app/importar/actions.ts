@@ -42,15 +42,23 @@ export async function importarProgramacion(
     analista_ini?: string | null;
   }[],
   periodoYYYYMM: string
-): Promise<{ ok: boolean; n?: number; sinCliente?: number; sinAnalista?: number; duplicados?: number; error?: string }> {
+): Promise<{ ok: boolean; n?: number; sinCliente?: number; sinAnalista?: number; duplicados?: number; clientesEnBase?: number; ejemplos?: string[]; error?: string }> {
   try { await exigirAdmin(); } catch (e: any) { return { ok: false, error: e.message }; }
   const db = createAdminClient();
   const periodo = `${periodoYYYYMM}-01`;
 
-  const [{ data: clientes }, { data: usuarios }] = await Promise.all([
-    db.from("clientes").select("id, sf_account_id, nit"),
-    db.from("usuarios").select("id, iniciales"),
-  ]);
+  // ⚠ Supabase devuelve máx. 1000 filas por consulta. Los clientes son ~18.500,
+  // así que hay que paginar para traerlos TODOS (si no, casi nada empareja).
+  const clientes: { id: string; sf_account_id: string | null; nit: string | null }[] = [];
+  for (let desde = 0; ; desde += 1000) {
+    const { data, error } = await db.from("clientes")
+      .select("id, sf_account_id, nit").range(desde, desde + 999);
+    if (error) return { ok: false, error: `Leyendo clientes: ${error.message}` };
+    if (!data?.length) break;
+    clientes.push(...data);
+    if (data.length < 1000) break;
+  }
+  const { data: usuarios } = await db.from("usuarios").select("id, iniciales");
   // Los IDs de Salesforce vienen en 15 o 18 caracteres; los primeros 15 son
   // idénticos, así que empatamos por esa raíz. También por NIT como respaldo.
   const raiz15 = (s: any) => (s ? String(s).trim().slice(0, 15) : "");
@@ -60,9 +68,14 @@ export async function importarProgramacion(
   const porIni = new Map((usuarios ?? []).map((u) => [String(u.iniciales).toUpperCase(), u.id]));
 
   let sinCliente = 0, sinAnalista = 0;
+  const ejemplos: string[] = [];
   const informes = filas.map((r) => {
     const cliente_id = porSf.get(raiz15(r.sf_account_id)) ?? porNit.get(soloDigitos(r.nit));
-    if (!cliente_id) { sinCliente++; return null; }
+    if (!cliente_id) {
+      sinCliente++;
+      if (ejemplos.length < 6) ejemplos.push(`id=${r.sf_account_id ?? "∅"} nit=${r.nit ?? "∅"}`);
+      return null;
+    }
     const ini = String(r.analista_ini ?? "").toUpperCase();
     const analista_id = porIni.get(ini) ?? null;
     if (ini && !analista_id) sinAnalista++;
@@ -94,9 +107,10 @@ export async function importarProgramacion(
   }
   const unicos = [...mapa.values()];
 
-  if (!unicos.length) return { ok: true, n: 0, sinCliente, sinAnalista };
+  const clientesEnBase = clientes?.length ?? 0;
+  if (!unicos.length) return { ok: true, n: 0, sinCliente, sinAnalista, clientesEnBase, ejemplos };
   const { error, count } = await db.from("informes")
     .upsert(unicos, { onConflict: "cliente_id,periodo,tipo_informe,area_emite", count: "exact" });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, n: count ?? unicos.length, sinCliente, sinAnalista, duplicados };
+  return { ok: true, n: count ?? unicos.length, sinCliente, sinAnalista, duplicados, clientesEnBase, ejemplos };
 }
