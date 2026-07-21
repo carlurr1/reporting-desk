@@ -42,8 +42,6 @@ export async function registrarEnvio(input: {
     .single();
   if (!inf) return { ok: false, error: "Informe no encontrado o sin permiso." };
 
-  const nombreCliente = (inf as any).clientes?.nombre as string | undefined;
-
   // Consulta Salesforce (best-effort: si SF falla, se registra sin validar).
   let sf_cliente: string | null = null;
   let sf_estado: string | null = null;
@@ -55,8 +53,8 @@ export async function registrarEnvio(input: {
       sf_cliente = caso.cliente;
       sf_estado = caso.estado;
       sf_consultado_at = new Date().toISOString();
-      sf_validado = !!(sf_cliente && nombreCliente &&
-        norm(sf_cliente) === norm(nombreCliente));
+      // El caso EXISTE en Salesforce → es real → validado.
+      sf_validado = true;
       // Cachea la respuesta cruda para auditoría / dashboards.
       await createAdminClient().from("sf_casos_cache").upsert({
         caso_sf: caso.numero_caso, cliente: caso.cliente, estado: caso.estado,
@@ -97,8 +95,55 @@ export async function iniciarGestion(informe_id: string): Promise<{ ok: boolean;
   return { ok: true };
 }
 
-const norm = (s: string) =>
-  s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+// ═══════════════════════════════════════════════════════════════
+//  Validación MASIVA contra Salesforce (coordinación/superadmin)
+//  Toma todos los casos del período, los consulta en SF y marca cuáles
+//  son reales (sf_validado). Así se validan también los importados.
+// ═══════════════════════════════════════════════════════════════
+export async function validarCasosSF(periodoYYYYMM: string): Promise<{
+  ok: boolean; revisados?: number; reales?: number; noEncontrados?: number; error?: string;
+}> {
+  const { sb, perfil } = await usuarioActual();
+  if (!perfil || !["coordinador", "superadmin"].includes(perfil.rol))
+    return { ok: false, error: "No autorizado" };
+  const periodo = `${periodoYYYYMM}-01`;
+
+  // Números de caso únicos del período (paginado por si supera 1000).
+  const casos = new Set<string>();
+  for (let d = 0; ; d += 1000) {
+    const { data } = await sb.from("informes").select("caso_sf")
+      .eq("periodo", periodo).not("caso_sf", "is", null).range(d, d + 999);
+    if (!data?.length) break;
+    for (const r of data) { const c = String(r.caso_sf).trim(); if (c) casos.add(c); }
+    if (data.length < 1000) break;
+  }
+  const lista = [...casos];
+  if (!lista.length) return { ok: true, revisados: 0, reales: 0, noEncontrados: 0 };
+
+  // Consulta Salesforce en lotes (un login, IN list acotada).
+  const encontrados = new Set<string>();
+  try {
+    for (let i = 0; i < lista.length; i += 150) {
+      const res = await consultarCasos(lista.slice(i, i + 150));
+      for (const c of res) encontrados.add(String(c.numero_caso).trim());
+    }
+  } catch (e: any) {
+    return { ok: false, error: `Salesforce: ${e?.message ?? "no se pudo conectar"}` };
+  }
+
+  const ahora = new Date().toISOString();
+  const reales = lista.filter((c) => encontrados.has(c));
+  const falsos = lista.filter((c) => !encontrados.has(c));
+  const enLotes = (arr: string[], n: number) => {
+    const out: string[][] = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out;
+  };
+  for (const lote of enLotes(reales, 150))
+    await sb.from("informes").update({ sf_validado: true, sf_consultado_at: ahora }).eq("periodo", periodo).in("caso_sf", lote);
+  for (const lote of enLotes(falsos, 150))
+    await sb.from("informes").update({ sf_validado: false, sf_consultado_at: ahora }).eq("periodo", periodo).in("caso_sf", lote);
+
+  return { ok: true, revisados: lista.length, reales: reales.length, noEncontrados: falsos.length };
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  Generar el período (crea los informes del mes desde la programación)

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
+import { validarCasosSF } from "@/app/actions";
 
 const ETB = "#0098d6";
 
@@ -72,12 +73,15 @@ const esFinal = (e: string) => e === "enviado" || e === "enviado_posventa";
 type Row = {
   id: string; estado: string; tipo_informe: string | null; area_emite: string | null;
   semana_emision: number | null; caso_sf: string | null; sf_validado: boolean;
+  sf_consultado_at: string | null;
   cliente: string; segmento: string; analista: string;
   en_proceso_at: string | null; enviado_at: string | null;
 };
 
-export default function Tablero({ periodo }: { periodo: string }) {
+export default function Tablero({ periodo, puedeValidar }: { periodo: string; puedeValidar?: boolean }) {
   const sb = useMemo(() => createClient(), []);
+  const [validando, setValidando] = useState(false);
+  const [avisoSF, setAvisoSF] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [tend, setTend] = useState<{ mes: string; enviados: number; total: number }[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -87,6 +91,16 @@ export default function Tablero({ periodo }: { periodo: string }) {
   const [fArea, setFArea] = useState<string[]>([]);
   const [fEst, setFEst] = useState<string[]>([]);
   const [q, setQ] = useState("");
+  const [refresh, setRefresh] = useState(0);
+
+  const validar = async () => {
+    setValidando(true); setAvisoSF("Consultando Salesforce…");
+    const r = await validarCasosSF(periodo.slice(0, 7));
+    setValidando(false);
+    if (!r.ok) { setAvisoSF(`Error: ${r.error}`); return; }
+    setAvisoSF(`Revisados ${r.revisados} · reales ${r.reales} · no encontrados ${r.noEncontrados}.`);
+    setRefresh((x) => x + 1);
+  };
 
   useEffect(() => {
     let vivo = true;
@@ -98,7 +112,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
       const acc: any[] = [];
       for (let desde = 0; ; desde += 1000) {
         const { data } = await sb.from("informes")
-          .select("id,estado,tipo_informe,area_emite,semana_emision,caso_sf,sf_validado,en_proceso_at,enviado_at,analista_id,clientes(nombre,segmento)")
+          .select("id,estado,tipo_informe,area_emite,semana_emision,caso_sf,sf_validado,sf_consultado_at,en_proceso_at,enviado_at,analista_id,clientes(nombre,segmento)")
           .eq("periodo", periodo).range(desde, desde + 999);
         if (!data?.length) break;
         acc.push(...data);
@@ -108,6 +122,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
       setRows(acc.map((r: any) => ({
         id: r.id, estado: r.estado, tipo_informe: r.tipo_informe, area_emite: r.area_emite,
         semana_emision: r.semana_emision, caso_sf: r.caso_sf, sf_validado: r.sf_validado,
+        sf_consultado_at: r.sf_consultado_at,
         en_proceso_at: r.en_proceso_at, enviado_at: r.enviado_at,
         cliente: r.clientes?.nombre ?? "—", segmento: r.clientes?.segmento ?? "—",
         analista: (r.analista_id && mapU.get(r.analista_id)) || "—",
@@ -119,7 +134,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
       setCargando(false);
     })();
     return () => { vivo = false; };
-  }, [sb, periodo]);
+  }, [sb, periodo, refresh]);
 
   const opts = useMemo(() => ({
     ana: [...new Set(rows.map((r) => r.analista))].filter((x) => x !== "—").sort(),
@@ -197,9 +212,10 @@ export default function Tablero({ periodo }: { periodo: string }) {
   const casos = useMemo(() => {
     const env = fil.filter((r) => esFinal(r.estado));
     return [
-      { n: "Validado", total: env.filter((r) => r.sf_validado).length, color: "#22c55e" },
-      { n: "Caso sin validar", total: env.filter((r) => r.caso_sf && !r.sf_validado).length, color: "#f59e0b" },
-      { n: "Sin caso", total: env.filter((r) => !r.caso_sf).length, color: "#ef4444" },
+      { n: "Real (validado)", total: env.filter((r) => r.sf_validado).length, color: "#16b364" },
+      { n: "No encontrado", total: env.filter((r) => r.caso_sf && !r.sf_validado && r.sf_consultado_at).length, color: "#ef4444" },
+      { n: "Pendiente validar", total: env.filter((r) => r.caso_sf && !r.sf_validado && !r.sf_consultado_at).length, color: "#f59e0b" },
+      { n: "Sin caso", total: env.filter((r) => !r.caso_sf).length, color: "#94a3b8" },
     ].filter((x) => x.total > 0);
   }, [fil]);
 
@@ -234,10 +250,17 @@ export default function Tablero({ periodo }: { periodo: string }) {
           {(fAna.length || fSeg.length || fArea.length || fEst.length) ? (
             <button className="btn" onClick={() => { setFAna([]); setFSeg([]); setFArea([]); setFEst([]); }}>Limpiar</button>
           ) : null}
+          {puedeValidar && (
+            <button className="btn" onClick={validar} disabled={validando}
+              title="Consulta todos los casos del período en Salesforce y marca los reales">
+              {validando ? "Validando…" : "✔ Validar casos SF"}
+            </button>
+          )}
           <button className="btn" onClick={exportarExcel} title="Descarga los datos filtrados en Excel">⬇ Excel</button>
           <button className="btn" onClick={() => window.print()} title="Imprime o guarda como PDF/imagen">🖨 PDF</button>
         </div>
       </div>
+      {avisoSF && <p className="sub" style={{ marginTop: -6, marginBottom: 12 }}>🔎 {avisoSF}</p>}
 
       <div className="kpis">
         <Kpi icon={FileText}   n={kpis.total} l="Informes" />

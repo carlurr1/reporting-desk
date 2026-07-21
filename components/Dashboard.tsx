@@ -43,7 +43,7 @@ export default function Dashboard({ perfil }: { perfil: Usuario }) {
         {puedeGestionar && <button className={`tab ${tab === "programacion" ? "on" : ""}`} onClick={() => setTab("programacion")}>Programación</button>}
       </div>
 
-      {tab === "tablero" && <Tablero periodo={periodo} />}
+      {tab === "tablero" && <Tablero periodo={periodo} puedeValidar={puedeGestionar} />}
       {tab === "bandeja" && esAnalista && <Bandeja perfil={perfil} periodo={periodo} />}
       {tab === "programacion" && puedeGestionar && <Programacion periodo={periodo} />}
     </div>
