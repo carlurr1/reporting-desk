@@ -2,12 +2,61 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  PieChart, Pie, Cell, Legend, LineChart, Line,
+  PieChart, Pie, Cell, Legend, Area, AreaChart, Label,
 } from "recharts";
+import {
+  FileText, Send, Clock3, Target, Users, ShieldCheck, TrendingUp, PieChart as PieIcon,
+  BarChart3, Building2, CalendarDays, Trophy,
+} from "lucide-react";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 
 const ETB = "#0098d6";
+
+// Grid / ejes discretos, estilo Power BI.
+const GRID = "#eef2f7";
+const AXIS = { fontSize: 11, fill: "#7688a0" };
+const axisLine = false, tickLine = false;
+
+// Tooltip personalizado.
+function TT({ active, payload, label, unidad }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="tt">
+      {label != null && <div className="tt-t">{label}</div>}
+      {payload.filter((p: any) => p.value !== 0 && p.value != null).map((p: any, i: number) => (
+        <div className="tt-r" key={i}>
+          <span className="tt-d" style={{ background: p.color || p.payload?.color || ETB }} />
+          {p.name}<span className="tt-v">{p.value}{unidad ?? ""}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Encabezado de tarjeta con icono.
+function Head({ icon: Icon, title, sub }: { icon: any; title: string; sub?: string }) {
+  return (
+    <div className="cardhead">
+      <span className="hico"><Icon size={16} /></span>
+      <div><h2>{title}</h2>{sub && <p className="sub tiny">{sub}</p>}</div>
+    </div>
+  );
+}
+
+// Total al centro de una dona.
+function Centro({ v, total, cap }: { v: any; total: number; cap: string }) {
+  if (!v) return null;
+  const cx = v.cx, cy = v.cy;
+  return (
+    <g>
+      <text x={cx} y={cy - 4} textAnchor="middle" dominantBaseline="central"
+        style={{ fontSize: 28, fontWeight: 800, fill: "#0b1b2b", letterSpacing: "-1px" }}>{total}</text>
+      <text x={cx} y={cy + 18} textAnchor="middle"
+        style={{ fontSize: 11, fill: "#7688a0", textTransform: "uppercase", letterSpacing: ".5px" }}>{cap}</text>
+    </g>
+  );
+}
 
 const EST = {
   pendiente:        { label: "Pendiente",  color: "#94a3b8" },
@@ -191,94 +240,118 @@ export default function Tablero({ periodo }: { periodo: string }) {
       </div>
 
       <div className="kpis">
-        <Kpi n={kpis.total} l="Informes" />
-        <Kpi n={kpis.enviados} l="Enviados" color="var(--good)" />
-        <Kpi n={kpis.pendientes} l="Por enviar" color="var(--warn)" />
-        <Kpi n={`${kpis.pct}%`} l="Cumplimiento" />
-        <Kpi n={kpis.horasProm != null ? `${kpis.horasProm} h` : "—"} l="Tiempo prom. gestión" />
-        <Kpi n={kpis.clientes} l="Clientes cubiertos" />
-        <Kpi n={kpis.validados} l="Casos SF validados" />
+        <Kpi icon={FileText}   n={kpis.total} l="Informes" />
+        <Kpi icon={Send}       n={kpis.enviados} l="Enviados" />
+        <Kpi icon={Clock3}     n={kpis.pendientes} l="Por enviar" />
+        <Kpi icon={Target}     n={`${kpis.pct}%`} l="Cumplimiento" />
+        <Kpi icon={TrendingUp} n={kpis.horasProm != null ? `${kpis.horasProm} h` : "—"} l="Tiempo prom." />
+        <Kpi icon={Building2}  n={kpis.clientes} l="Clientes" />
+        <Kpi icon={ShieldCheck} n={kpis.validados} l="Casos validados" />
       </div>
 
       {cargando && <p className="sub">Cargando datos…</p>}
 
       <div className="grid2">
         <div className="card">
-          <h2>Productividad por analista</h2>
+          <Head icon={BarChart3} title="Productividad por analista" sub="informes por estado" />
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={porAnalista} margin={{ left: -10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-              <XAxis dataKey="iniciales" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip /><Legend />
-              {ESTADOS.map((e) => (
+            <BarChart data={porAnalista} margin={{ left: -12, right: 8 }} barCategoryGap="22%">
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="iniciales" tick={AXIS} axisLine={axisLine} tickLine={tickLine} />
+              <YAxis tick={AXIS} axisLine={axisLine} tickLine={tickLine} allowDecimals={false} width={30} />
+              <Tooltip cursor={{ fill: "rgba(0,152,214,.05)" }} content={<TT />} />
+              <Legend iconType="circle" iconSize={9} />
+              {ESTADOS.map((e, i) => (
                 <Bar key={e} dataKey={e} stackId="a" fill={EST[e].color} name={EST[e].label}
-                  radius={e === "enviado_posventa" ? [4, 4, 0, 0] : undefined} />
+                  radius={i === ESTADOS.length - 1 ? [5, 5, 0, 0] : undefined} maxBarSize={46} />
               ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h2>Estado del período</h2>
+          <Head icon={PieIcon} title="Estado del período" sub={`${kpis.total} informes`} />
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
-              <Pie data={porEstado} dataKey="total" nameKey="estado" innerRadius={65} outerRadius={105} paddingAngle={2}>
+              <Pie data={porEstado} dataKey="total" nameKey="estado" innerRadius={72} outerRadius={108}
+                   paddingAngle={2} cornerRadius={5} stroke="none">
                 {porEstado.map((s, i) => <Cell key={i} fill={s.color} />)}
+                <Label content={(p: any) => <Centro v={p.viewBox} total={kpis.total} cap="informes" />} />
               </Pie>
-              <Legend /><Tooltip />
+              <Legend iconType="circle" iconSize={9} />
+              <Tooltip content={<TT />} />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h2>Top 10 clientes · nº de informes</h2>
+          <Head icon={Trophy} title="Top 10 clientes" sub="por nº de informes" />
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={topClientes} layout="vertical" margin={{ left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" horizontal={false} />
-              <XAxis type="number" tick={{ fontSize: 12 }} allowDecimals={false} />
-              <YAxis type="category" dataKey="cliente" tick={{ fontSize: 10 }} width={150}
-                tickFormatter={(v: string) => v.length > 22 ? v.slice(0, 20) + "…" : v} />
-              <Tooltip />
-              <Bar dataKey="total" fill={ETB} radius={[0, 4, 4, 0]} name="Informes" />
+            <BarChart data={topClientes} layout="vertical" margin={{ left: 8, right: 12 }}>
+              <defs>
+                <linearGradient id="gEtb" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#43b3e3" /><stop offset="100%" stopColor={ETB} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={GRID} horizontal={false} />
+              <XAxis type="number" tick={AXIS} axisLine={axisLine} tickLine={tickLine} allowDecimals={false} />
+              <YAxis type="category" dataKey="cliente" tick={{ ...AXIS, fontSize: 10 }} axisLine={axisLine} tickLine={tickLine} width={155}
+                tickFormatter={(v: string) => v.length > 24 ? v.slice(0, 22) + "…" : v} />
+              <Tooltip cursor={{ fill: "rgba(0,152,214,.05)" }} content={<TT />} />
+              <Bar dataKey="total" fill="url(#gEtb)" radius={[0, 5, 5, 0]} name="Informes" maxBarSize={22} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h2>Cumplimiento por segmento</h2>
+          <Head icon={Building2} title="Cumplimiento por segmento" sub="% enviados" />
           <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={porSegmento} layout="vertical" margin={{ left: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" horizontal={false} />
-              <XAxis type="number" domain={[0, 100]} unit="%" tick={{ fontSize: 12 }} />
-              <YAxis type="category" dataKey="segmento" tick={{ fontSize: 12 }} width={90} />
-              <Tooltip />
-              <Bar dataKey="pct" fill="#029E73" radius={[0, 4, 4, 0]} name="% cumplimiento" />
+            <BarChart data={porSegmento} layout="vertical" margin={{ left: 8, right: 12 }}>
+              <defs>
+                <linearGradient id="gGreen" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="#4ade80" /><stop offset="100%" stopColor="#16b364" />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={GRID} horizontal={false} />
+              <XAxis type="number" domain={[0, 100]} unit="%" tick={AXIS} axisLine={axisLine} tickLine={tickLine} />
+              <YAxis type="category" dataKey="segmento" tick={AXIS} axisLine={axisLine} tickLine={tickLine} width={90} />
+              <Tooltip cursor={{ fill: "rgba(0,152,214,.05)" }} content={<TT unidad="%" />} />
+              <Bar dataKey="pct" fill="url(#gGreen)" radius={[0, 5, 5, 0]} name="Cumplimiento" maxBarSize={30} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h2>Tendencia mensual · enviados</h2>
+          <Head icon={CalendarDays} title="Tendencia mensual" sub="informes enviados" />
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={tend} margin={{ left: -10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-              <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip />
-              <Line type="monotone" dataKey="enviados" stroke={ETB} strokeWidth={2} dot={{ r: 3 }} name="Enviados" />
-            </LineChart>
+            <AreaChart data={tend} margin={{ left: -12, right: 8 }}>
+              <defs>
+                <linearGradient id="gArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={ETB} stopOpacity={0.28} />
+                  <stop offset="100%" stopColor={ETB} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="mes" tick={AXIS} axisLine={axisLine} tickLine={tickLine} />
+              <YAxis tick={AXIS} axisLine={axisLine} tickLine={tickLine} allowDecimals={false} width={30} />
+              <Tooltip content={<TT />} />
+              <Area type="monotone" dataKey="enviados" stroke={ETB} strokeWidth={2.5} fill="url(#gArea)"
+                dot={{ r: 3, fill: ETB, strokeWidth: 0 }} activeDot={{ r: 5 }} name="Enviados" />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h2>Casos Salesforce · control</h2>
+          <Head icon={ShieldCheck} title="Casos Salesforce" sub="control de calidad" />
           <ResponsiveContainer width="100%" height={280}>
             <PieChart>
-              <Pie data={casos} dataKey="total" nameKey="n" innerRadius={55} outerRadius={95} paddingAngle={2}>
+              <Pie data={casos} dataKey="total" nameKey="n" innerRadius={62} outerRadius={96}
+                   paddingAngle={2} cornerRadius={5} stroke="none">
                 {casos.map((s, i) => <Cell key={i} fill={s.color} />)}
+                <Label content={(p: any) => <Centro v={p.viewBox} total={casos.reduce((a, b) => a + b.total, 0)} cap="enviados" />} />
               </Pie>
-              <Legend /><Tooltip />
+              <Legend iconType="circle" iconSize={9} />
+              <Tooltip content={<TT />} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -286,7 +359,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
 
       {/* Resumen por analista con porcentajes y tiempo */}
       <div className="card">
-        <h2>Detalle por analista</h2>
+        <Head icon={Users} title="Detalle por analista" sub="gestión y cumplimiento" />
         <div style={{ overflowX: "auto" }}>
           <table>
             <thead>
@@ -317,21 +390,29 @@ export default function Tablero({ periodo }: { periodo: string }) {
       </div>
 
       <div className="card">
-        <h2>Distribución por semana de emisión</h2>
+        <Head icon={CalendarDays} title="Distribución por semana de emisión" />
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={porSemana}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" vertical={false} />
-            <XAxis dataKey="semana" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="total" fill={ETB} radius={[4, 4, 0, 0]} name="Informes" />
+          <BarChart data={porSemana} barCategoryGap="35%">
+            <defs>
+              <linearGradient id="gEtbV" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#43b3e3" /><stop offset="100%" stopColor={ETB} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke={GRID} vertical={false} />
+            <XAxis dataKey="semana" tick={AXIS} axisLine={axisLine} tickLine={tickLine} />
+            <YAxis tick={AXIS} axisLine={axisLine} tickLine={tickLine} allowDecimals={false} width={30} />
+            <Tooltip cursor={{ fill: "rgba(0,152,214,.05)" }} content={<TT />} />
+            <Bar dataKey="total" fill="url(#gEtbV)" radius={[5, 5, 0, 0]} name="Informes" maxBarSize={70} />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
       <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>Detalle por cliente · {tabla.length}{fil.length > 200 ? ` de ${fil.length}` : ""}</h2>
+        <div className="cardhead" style={{ justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span className="hico"><FileText size={16} /></span>
+            <h2>Detalle por cliente · {tabla.length}{fil.length > 200 ? ` de ${fil.length}` : ""}</h2>
+          </div>
           <input className="inp" placeholder="Buscar cliente…" value={q} onChange={(e) => setQ(e.target.value)} style={{ width: 240 }} />
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -361,10 +442,11 @@ export default function Tablero({ periodo }: { periodo: string }) {
   );
 }
 
-function Kpi({ n, l, color }: { n?: number | string; l: string; color?: string }) {
+function Kpi({ n, l, icon: Icon }: { n?: number | string; l: string; icon?: any }) {
   return (
     <div className="kpi">
-      <div className="n" style={color ? { color } : undefined}>{n ?? "—"}</div>
+      {Icon && <span className="ico"><Icon size={19} /></span>}
+      <div className="n">{n ?? "—"}</div>
       <div className="l">{l}</div>
     </div>
   );
