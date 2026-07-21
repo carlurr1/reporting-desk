@@ -51,13 +51,17 @@ export async function importarProgramacion(
     db.from("clientes").select("id, sf_account_id, nit"),
     db.from("usuarios").select("id, iniciales"),
   ]);
-  const porSf = new Map((clientes ?? []).map((c) => [c.sf_account_id, c.id]));
-  const porNit = new Map((clientes ?? []).map((c) => [String(c.nit), c.id]));
+  // Los IDs de Salesforce vienen en 15 o 18 caracteres; los primeros 15 son
+  // idénticos, así que empatamos por esa raíz. También por NIT como respaldo.
+  const raiz15 = (s: any) => (s ? String(s).trim().slice(0, 15) : "");
+  const soloDigitos = (s: any) => String(s ?? "").replace(/\D/g, "");
+  const porSf = new Map((clientes ?? []).filter((c) => c.sf_account_id).map((c) => [raiz15(c.sf_account_id), c.id]));
+  const porNit = new Map((clientes ?? []).filter((c) => c.nit).map((c) => [soloDigitos(c.nit), c.id]));
   const porIni = new Map((usuarios ?? []).map((u) => [String(u.iniciales).toUpperCase(), u.id]));
 
   let sinCliente = 0, sinAnalista = 0;
   const informes = filas.map((r) => {
-    const cliente_id = porSf.get(r.sf_account_id ?? "") ?? porNit.get(String(r.nit));
+    const cliente_id = porSf.get(raiz15(r.sf_account_id)) ?? porNit.get(soloDigitos(r.nit));
     if (!cliente_id) { sinCliente++; return null; }
     const ini = String(r.analista_ini ?? "").toUpperCase();
     const analista_id = porIni.get(ini) ?? null;
