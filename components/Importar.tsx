@@ -60,6 +60,7 @@ export default function Importar() {
 
   const cargarClientes = async () => {
     const filas = filasDe();
+    add(`Hoja "${hoja}": ${filas.length} filas. Columnas: ${filas[0] ? Object.keys(filas[0]).join(", ") : "(vacía)"}`);
     const mapeadas = filas.map((r) => ({
       sf_account_id: S(r["Id"]),
       nombre: S(r["Name"]),
@@ -86,6 +87,7 @@ export default function Importar() {
 
   const cargarProgramacion = async () => {
     const filas = filasDe();
+    add(`Hoja "${hoja}": ${filas.length} filas. Columnas: ${filas[0] ? Object.keys(filas[0]).join(", ") : "(vacía)"}`);
     const prog = filas
       .filter((r) => estadoCodigo(r["Estado"]) !== "sin_programacion")
       .map((r) => ({
