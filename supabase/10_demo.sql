@@ -22,17 +22,19 @@ insert into public.clientes (sf_account_id, nit, nombre, segmento, subsegmento, 
   ('DEMO-7','900100007','10COM SAS (DEMO)','Mayoristas','Microempresa',null,null),
   ('DEMO-8','900100008','AGENCIA NACIONAL DE TIERRAS (DEMO)','Gobierno','Nación','PREMIUM','Premium');
 
--- Informes del período actual con estados variados (analista sin asignar).
+-- Informes del período actual: 4 por cliente, cada uno con un TIPO distinto
+-- (indexado por g = 1..4) para no violar la unicidad
+-- (cliente_id, periodo, tipo_informe, area_emite). El estado se sortea.
 insert into public.informes (cliente_id, periodo, semana_emision, tipo_informe, area_emite, estado, caso_sf, fecha_envio, sf_validado)
 select c.id,
        date_trunc('month', current_date)::date,
-       1 + (row_number() over () % 4),
-       (array['Estandar','Estandar 2','Especial','Consumo LTE'])[1 + (row_number() over () % 4)],
+       g,
+       (array['Estandar','Estandar 2','Especial','Consumo LTE'])[g],
        'Reporting',
-       (array['enviado','enviado','enviado','programado','pendiente','enviado_parcial'])[1 + (row_number() over () % 6)],
+       (array['enviado','enviado','programado','pendiente','enviado_parcial'])[1 + floor(random()*5)::int],
        case when random() < 0.6 then (26600000 + (random()*9999)::int)::text else null end,
        case when random() < 0.6 then current_date - (random()*10)::int else null end,
        random() < 0.5
 from public.clientes c
-cross join generate_series(1, 6) g
+cross join generate_series(1, 4) g
 where c.sf_account_id like 'DEMO-%';
