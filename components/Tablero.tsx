@@ -11,6 +11,7 @@ const ETB = "#0098d6";
 const EST = {
   pendiente:        { label: "Pendiente",  color: "#94a3b8" },
   programado:       { label: "Programado", color: "#3b82f6" },
+  en_proceso:       { label: "En proceso", color: "#8b5cf6" },
   enviado_parcial:  { label: "Parcial",    color: "#f59e0b" },
   enviado:          { label: "Enviado",    color: "#22c55e" },
   enviado_posventa: { label: "Enviado posventa", color: "#16a34a" },
@@ -22,6 +23,7 @@ type Row = {
   id: string; estado: string; tipo_informe: string | null; area_emite: string | null;
   semana_emision: number | null; caso_sf: string | null; sf_validado: boolean;
   cliente: string; segmento: string; analista: string;
+  en_proceso_at: string | null; enviado_at: string | null;
 };
 
 export default function Tablero({ periodo }: { periodo: string }) {
@@ -46,7 +48,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
       const acc: any[] = [];
       for (let desde = 0; ; desde += 1000) {
         const { data } = await sb.from("informes")
-          .select("id,estado,tipo_informe,area_emite,semana_emision,caso_sf,sf_validado,analista_id,clientes(nombre,segmento)")
+          .select("id,estado,tipo_informe,area_emite,semana_emision,caso_sf,sf_validado,en_proceso_at,enviado_at,analista_id,clientes(nombre,segmento)")
           .eq("periodo", periodo).range(desde, desde + 999);
         if (!data?.length) break;
         acc.push(...data);
@@ -56,6 +58,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
       setRows(acc.map((r: any) => ({
         id: r.id, estado: r.estado, tipo_informe: r.tipo_informe, area_emite: r.area_emite,
         semana_emision: r.semana_emision, caso_sf: r.caso_sf, sf_validado: r.sf_validado,
+        en_proceso_at: r.en_proceso_at, enviado_at: r.enviado_at,
         cliente: r.clientes?.nombre ?? "—", segmento: r.clientes?.segmento ?? "—",
         analista: (r.analista_id && mapU.get(r.analista_id)) || "—",
       })));
@@ -88,7 +91,12 @@ export default function Tablero({ periodo }: { periodo: string }) {
     const validados = fil.filter((r) => r.sf_validado).length;
     const clientes = new Set(fil.map((r) => r.cliente)).size;
     const pct = total ? Math.round((enviados / total) * 1000) / 10 : 0;
-    return { total, enviados, pendientes, validados, clientes, pct };
+    // Tiempo promedio de gestión (en_proceso → enviado), en horas.
+    const tiempos = fil.filter((r) => r.en_proceso_at && r.enviado_at)
+      .map((r) => (new Date(r.enviado_at!).getTime() - new Date(r.en_proceso_at!).getTime()) / 3600000)
+      .filter((h) => h >= 0);
+    const horasProm = tiempos.length ? Math.round(tiempos.reduce((a, b) => a + b, 0) / tiempos.length * 10) / 10 : null;
+    return { total, enviados, pendientes, validados, clientes, pct, horasProm };
   }, [fil]);
 
   const porAnalista = useMemo(() => {
@@ -155,6 +163,7 @@ export default function Tablero({ periodo }: { periodo: string }) {
         <Kpi n={kpis.enviados} l="Enviados" color="var(--good)" />
         <Kpi n={kpis.pendientes} l="Por enviar" color="var(--warn)" />
         <Kpi n={`${kpis.pct}%`} l="Cumplimiento" />
+        <Kpi n={kpis.horasProm != null ? `${kpis.horasProm} h` : "—"} l="Tiempo prom. gestión" />
         <Kpi n={kpis.clientes} l="Clientes cubiertos" />
         <Kpi n={kpis.validados} l="Casos SF validados" />
       </div>

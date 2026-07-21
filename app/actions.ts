@@ -74,12 +74,27 @@ export async function registrarEnvio(input: {
     estado: input.estado ?? "enviado",
     caso_sf: input.caso_sf.trim(),
     fecha_envio: input.fecha_envio ?? new Date().toISOString().slice(0, 10),
+    enviado_at: new Date().toISOString(),
     informacion_pendiente: input.informacion_pendiente ?? null,
     sf_cliente, sf_estado, sf_validado, sf_consultado_at,
   }).eq("id", input.informe_id);
 
   if (error) return { ok: false, error: error.message };
   return { ok: true, validado: sf_validado, sf_cliente };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  Iniciar gestión: el asignado marca el informe como "En proceso"
+//  y arranca el cronómetro (en_proceso_at). Solo la primera vez.
+// ═══════════════════════════════════════════════════════════════
+export async function iniciarGestion(informe_id: string): Promise<{ ok: boolean; error?: string }> {
+  const { sb } = await usuarioActual();
+  const { error } = await sb.from("informes")
+    .update({ estado: "en_proceso", en_proceso_at: new Date().toISOString() })
+    .eq("id", informe_id)
+    .is("en_proceso_at", null);   // no re-inicia si ya estaba en proceso
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 const norm = (s: string) =>
