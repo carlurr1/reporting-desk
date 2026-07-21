@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { logout } from "@/app/login/actions";
 import Tablero from "./Tablero";
 import Bandeja from "./Bandeja";
@@ -30,6 +31,7 @@ export default function Dashboard({ perfil }: { perfil: Usuario }) {
         </h1>
         <div className="row" style={{ alignItems: "center" }}>
           <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} />
+          {perfil.rol === "superadmin" && <Link href="/importar" className="btn">Importar</Link>}
           <span className="sub">{perfil.nombre} {perfil.apellido ?? ""} ({perfil.iniciales})</span>
           <form action={logout}><button className="btn">Salir</button></form>
         </div>
