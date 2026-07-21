@@ -4,6 +4,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
+import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 
 const ETB = "#0098d6";
@@ -156,6 +157,22 @@ export default function Tablero({ periodo }: { periodo: string }) {
   const tabla = useMemo(() =>
     fil.filter((r) => !q || r.cliente.toLowerCase().includes(q.toLowerCase())).slice(0, 200), [fil, q]);
 
+  const exportarExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const s1 = XLSX.utils.json_to_sheet(porAnalista.map((a) => ({
+      Analista: a.iniciales, Total: a.total, Enviados: a.enviados, "En proceso": a.en_proceso,
+      "Por enviar": a.pendientes, "Cumplimiento %": a.pct, "Tiempo prom (h)": a.horas ?? "",
+    })));
+    XLSX.utils.book_append_sheet(wb, s1, "Por analista");
+    const s2 = XLSX.utils.json_to_sheet(fil.map((r) => ({
+      Cliente: r.cliente, Segmento: r.segmento, Analista: r.analista, Tipo: r.tipo_informe ?? "",
+      Area: r.area_emite ?? "", Estado: (EST as any)[r.estado]?.label ?? r.estado,
+      "Caso SF": r.caso_sf ?? "", Validado: r.sf_validado ? "Sí" : "No",
+    })));
+    XLSX.utils.book_append_sheet(wb, s2, "Detalle");
+    XLSX.writeFile(wb, `reporting-desk-${periodo.slice(0, 7)}.xlsx`);
+  };
+
   return (
     <>
       <div className="filtros">
@@ -164,10 +181,13 @@ export default function Tablero({ periodo }: { periodo: string }) {
         <FiltroChips titulo="Área" opciones={opts.area} sel={fArea} setSel={setFArea} />
         <FiltroChips titulo="Estado" opciones={ESTADOS as unknown as string[]} sel={fEst} setSel={setFEst}
           etiqueta={(e) => (EST as any)[e]?.label ?? e} />
-        {(fAna.length || fSeg.length || fArea.length || fEst.length) ? (
-          <button className="btn" style={{ alignSelf: "center" }}
-            onClick={() => { setFAna([]); setFSeg([]); setFArea([]); setFEst([]); }}>Limpiar</button>
-        ) : null}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignSelf: "center" }}>
+          {(fAna.length || fSeg.length || fArea.length || fEst.length) ? (
+            <button className="btn" onClick={() => { setFAna([]); setFSeg([]); setFArea([]); setFEst([]); }}>Limpiar</button>
+          ) : null}
+          <button className="btn" onClick={exportarExcel} title="Descarga los datos filtrados en Excel">⬇ Excel</button>
+          <button className="btn" onClick={() => window.print()} title="Imprime o guarda como PDF/imagen">🖨 PDF</button>
+        </div>
       </div>
 
       <div className="kpis">

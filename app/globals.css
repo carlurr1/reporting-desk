@@ -110,3 +110,11 @@ th { color: var(--muted); font-weight: 600; }
 .barra { display: inline-block; width: 90px; height: 7px; border-radius: 999px; background: #edf1f6;
   overflow: hidden; vertical-align: middle; margin-right: 6px; }
 .barra span { display: block; height: 100%; border-radius: 999px; }
+
+/* ── Impresión / PDF ─────────────────────────────────────── */
+@media print {
+  body { background: #fff; }
+  .filtros .btn, .topbar form, .topbar .btn, .topbar a, .tabs { display: none !important; }
+  .card, .kpi { break-inside: avoid; box-shadow: none; }
+  .shell { max-width: 100%; padding: 0; }
+}
