@@ -104,6 +104,7 @@ export default function Importar() {
     const r = await importarProgramacion(prog, periodo);
     if (!r.ok) { add(`❌ Error: ${r.error}`); return; }
     add(`✅ Listo. ${r.n} informes del período ${periodo}.`);
+    if (r.duplicados) add(`  ℹ ${r.duplicados} filas duplicadas en el archivo (se guardó la última de cada una).`);
     if (r.sinCliente) add(`  ⚠ ${r.sinCliente} sin cliente empatado (importa primero los clientes).`);
     if (r.sinAnalista) add(`  ⚠ ${r.sinAnalista} con analista no registrado (crea el usuario con esas iniciales).`);
   };

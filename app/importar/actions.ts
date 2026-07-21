@@ -42,7 +42,7 @@ export async function importarProgramacion(
     analista_ini?: string | null;
   }[],
   periodoYYYYMM: string
-): Promise<{ ok: boolean; n?: number; sinCliente?: number; sinAnalista?: number; error?: string }> {
+): Promise<{ ok: boolean; n?: number; sinCliente?: number; sinAnalista?: number; duplicados?: number; error?: string }> {
   try { await exigirAdmin(); } catch (e: any) { return { ok: false, error: e.message }; }
   const db = createAdminClient();
   const periodo = `${periodoYYYYMM}-01`;
@@ -75,9 +75,24 @@ export async function importarProgramacion(
     };
   }).filter(Boolean) as any[];
 
-  if (!informes.length) return { ok: true, n: 0, sinCliente, sinAnalista };
+  // Elimina duplicados dentro del mismo archivo: la clave única es
+  // (cliente_id, periodo, tipo_informe, area_emite). Postgres no permite
+  // tocar la misma fila dos veces en un upsert. Si tipo o área vienen vacíos,
+  // no se agrupan (la BD los trata como distintos). Se queda la última fila.
+  const mapa = new Map<string, any>();
+  let libre = 0, duplicados = 0;
+  for (const inf of informes) {
+    const clave = inf.tipo_informe && inf.area_emite
+      ? `${inf.cliente_id}|${inf.periodo}|${inf.tipo_informe}|${inf.area_emite}`
+      : `__x${libre++}`;
+    if (mapa.has(clave)) duplicados++;
+    mapa.set(clave, inf);
+  }
+  const unicos = [...mapa.values()];
+
+  if (!unicos.length) return { ok: true, n: 0, sinCliente, sinAnalista };
   const { error, count } = await db.from("informes")
-    .upsert(informes, { onConflict: "cliente_id,periodo,tipo_informe,area_emite", count: "exact" });
+    .upsert(unicos, { onConflict: "cliente_id,periodo,tipo_informe,area_emite", count: "exact" });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, n: count ?? informes.length, sinCliente, sinAnalista };
+  return { ok: true, n: count ?? unicos.length, sinCliente, sinAnalista, duplicados };
 }
