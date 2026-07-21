@@ -105,3 +105,8 @@ th { color: var(--muted); font-weight: 600; }
   background: #fff; color: var(--ink); cursor: pointer; transition: all .1s; }
 .chip:hover { border-color: var(--etb); color: var(--etb); }
 .chip.on { background: var(--etb); border-color: var(--etb); color: #fff; font-weight: 600; }
+
+/* ── Barra de progreso (cumplimiento en tabla) ───────────── */
+.barra { display: inline-block; width: 90px; height: 7px; border-radius: 999px; background: #edf1f6;
+  overflow: hidden; vertical-align: middle; margin-right: 6px; }
+.barra span { display: block; height: 100%; border-radius: 999px; }

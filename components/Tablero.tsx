@@ -102,10 +102,22 @@ export default function Tablero({ periodo }: { periodo: string }) {
   const porAnalista = useMemo(() => {
     const m = new Map<string, any>();
     for (const r of fil) {
-      if (!m.has(r.analista)) m.set(r.analista, { iniciales: r.analista, pendiente: 0, programado: 0, enviado_parcial: 0, enviado: 0, enviado_posventa: 0, total: 0 });
+      if (!m.has(r.analista)) m.set(r.analista, { iniciales: r.analista, pendiente: 0, programado: 0, en_proceso: 0, enviado_parcial: 0, enviado: 0, enviado_posventa: 0, total: 0, _horas: [] as number[] });
       const o = m.get(r.analista); o[r.estado] = (o[r.estado] ?? 0) + 1; o.total++;
+      if (r.en_proceso_at && r.enviado_at) {
+        const h = (new Date(r.enviado_at).getTime() - new Date(r.en_proceso_at).getTime()) / 3600000;
+        if (h >= 0) o._horas.push(h);
+      }
     }
-    return [...m.values()].filter((x) => x.iniciales !== "—").sort((a, b) => b.total - a.total);
+    return [...m.values()].filter((x) => x.iniciales !== "—").map((o) => {
+      const enviados = o.enviado + o.enviado_posventa;
+      const pendientes = o.pendiente + o.programado;
+      return {
+        ...o, enviados, pendientes,
+        pct: o.total ? Math.round((enviados / o.total) * 1000) / 10 : 0,
+        horas: o._horas.length ? Math.round(o._horas.reduce((a: number, b: number) => a + b, 0) / o._horas.length * 10) / 10 : null,
+      };
+    }).sort((a, b) => b.total - a.total);
   }, [fil]);
 
   const porEstado = useMemo(() =>
@@ -249,6 +261,38 @@ export default function Tablero({ periodo }: { periodo: string }) {
               <Legend /><Tooltip />
             </PieChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Resumen por analista con porcentajes y tiempo */}
+      <div className="card">
+        <h2>Detalle por analista</h2>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Analista</th><th>Total</th><th>Enviados</th><th>En proceso</th>
+                <th>Por enviar</th><th>Cumplimiento</th><th>Tiempo prom.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {porAnalista.map((a) => (
+                <tr key={a.iniciales}>
+                  <td><strong>{a.iniciales}</strong></td>
+                  <td>{a.total}</td>
+                  <td>{a.enviados}</td>
+                  <td>{a.en_proceso}</td>
+                  <td>{a.pendientes}</td>
+                  <td>
+                    <div className="barra"><span style={{ width: `${a.pct}%`, background: a.pct >= 80 ? "var(--good)" : a.pct >= 50 ? "var(--warn)" : "var(--bad)" }} /></div>
+                    <span className="tiny">{a.pct}%</span>
+                  </td>
+                  <td>{a.horas != null ? `${a.horas} h` : "—"}</td>
+                </tr>
+              ))}
+              {!porAnalista.length && <tr><td colSpan={7} className="sub">Sin datos por analista (crea los usuarios y re-importa).</td></tr>}
+            </tbody>
+          </table>
         </div>
       </div>
 
