@@ -14,9 +14,9 @@ import { validarCasosSF } from "@/app/actions";
 
 const ETB = "#0098d6";
 
-// Grid / ejes discretos, estilo Power BI.
-const GRID = "#eef2f7";
-const AXIS = { fontSize: 11, fill: "#7688a0" };
+// Grid / ejes discretos (tema oscuro Aurora).
+const GRID = "#1a2333";
+const AXIS = { fontSize: 11, fill: "#8994a8" };
 const axisLine = false, tickLine = false;
 
 // Tooltip personalizado.
@@ -45,6 +45,24 @@ function Head({ icon: Icon, title, sub }: { icon: any; title: string; sub?: stri
   );
 }
 
+// Sparkline: convierte una serie de valores en un path SVG (56×24).
+function sparkPath(vals: number[], w = 56, h = 24): string {
+  if (!vals.length) return "";
+  const min = Math.min(...vals), max = Math.max(...vals), rng = max - min || 1;
+  const step = vals.length > 1 ? w / (vals.length - 1) : 0;
+  return vals.map((v, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(h - ((v - min) / rng) * (h - 4) - 2).toFixed(1)}`).join(" ");
+}
+// Períodos de los últimos n meses terminando en `periodo` (YYYY-MM-01).
+function ultimosPeriodos(periodo: string, n: number): string[] {
+  const [y, m] = periodo.split("-").map(Number);
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(y, m - 1 - i, 1);
+    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
+  }
+  return out;
+}
+
 // Total al centro de una dona.
 function Centro({ v, total, cap }: { v: any; total: number; cap: string }) {
   if (!v) return null;
@@ -52,9 +70,9 @@ function Centro({ v, total, cap }: { v: any; total: number; cap: string }) {
   return (
     <g>
       <text x={cx} y={cy - 4} textAnchor="middle" dominantBaseline="central"
-        style={{ fontSize: 28, fontWeight: 800, fill: "#0b1b2b", letterSpacing: "-1px" }}>{total}</text>
+        style={{ fontSize: 28, fontWeight: 800, fill: "#fff", letterSpacing: "-1px" }}>{total}</text>
       <text x={cx} y={cy + 18} textAnchor="middle"
-        style={{ fontSize: 11, fill: "#7688a0", textTransform: "uppercase", letterSpacing: ".5px" }}>{cap}</text>
+        style={{ fontSize: 11, fill: "#8994a8", textTransform: "uppercase", letterSpacing: ".5px" }}>{cap}</text>
     </g>
   );
 }
@@ -84,6 +102,7 @@ export default function Tablero({ periodo, puedeValidar }: { periodo: string; pu
   const [avisoSF, setAvisoSF] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [tend, setTend] = useState<{ mes: string; enviados: number; total: number }[]>([]);
+  const [serie, setSerie] = useState<Record<string, number[]>>({});
   const [cargando, setCargando] = useState(true);
 
   const [fAna, setFAna] = useState<string[]>([]);
@@ -131,6 +150,36 @@ export default function Tablero({ periodo, puedeValidar }: { periodo: string; pu
       const { data: t } = await sb.from("v_tendencia_mensual").select("periodo,total,enviados").order("periodo");
       if (!vivo) return;
       setTend((t ?? []).map((x: any) => ({ mes: String(x.periodo).slice(0, 7), enviados: x.enviados, total: x.total })));
+
+      // Serie de los últimos 6 meses para sparklines y deltas (datos reales).
+      const periodos = ultimosPeriodos(periodo, 6);
+      const hist: any[] = [];
+      for (let d = 0; ; d += 1000) {
+        const { data } = await sb.from("informes")
+          .select("periodo,estado,sf_validado,en_proceso_at,enviado_at,cliente_id")
+          .gte("periodo", periodos[0]).lte("periodo", periodo).range(d, d + 999);
+        if (!data?.length) break;
+        hist.push(...data);
+        if (data.length < 1000) break;
+      }
+      if (!vivo) return;
+      const metricas = { informes: [], enviados: [], porenviar: [], cumplimiento: [], tiempo: [], clientes: [], validados: [] } as Record<string, number[]>;
+      for (const p of periodos) {
+        const rs = hist.filter((r) => String(r.periodo) === p);
+        const total = rs.length;
+        const env = rs.filter((r) => r.estado === "enviado" || r.estado === "enviado_posventa").length;
+        const pend = rs.filter((r) => r.estado === "pendiente" || r.estado === "programado").length;
+        const ts = rs.filter((r) => r.en_proceso_at && r.enviado_at)
+          .map((r) => (new Date(r.enviado_at).getTime() - new Date(r.en_proceso_at).getTime()) / 3600000).filter((h) => h >= 0);
+        metricas.informes.push(total);
+        metricas.enviados.push(env);
+        metricas.porenviar.push(pend);
+        metricas.cumplimiento.push(total ? Math.round((env / total) * 1000) / 10 : 0);
+        metricas.tiempo.push(ts.length ? Math.round(ts.reduce((a, b) => a + b, 0) / ts.length * 10) / 10 : 0);
+        metricas.clientes.push(new Set(rs.map((r) => r.cliente_id)).size);
+        metricas.validados.push(rs.filter((r) => r.sf_validado).length);
+      }
+      setSerie(metricas);
       setCargando(false);
     })();
     return () => { vivo = false; };
@@ -263,13 +312,13 @@ export default function Tablero({ periodo, puedeValidar }: { periodo: string; pu
       {avisoSF && <p className="sub" style={{ marginTop: -6, marginBottom: 12 }}>🔎 {avisoSF}</p>}
 
       <div className="kpis">
-        <Kpi icon={FileText}   n={kpis.total} l="Informes" />
-        <Kpi icon={Send}       n={kpis.enviados} l="Enviados" />
-        <Kpi icon={Clock3}     n={kpis.pendientes} l="Por enviar" />
-        <Kpi icon={Target}     n={`${kpis.pct}%`} l="Cumplimiento" />
-        <Kpi icon={TrendingUp} n={kpis.horasProm != null ? `${kpis.horasProm} h` : "—"} l="Tiempo prom." />
-        <Kpi icon={Building2}  n={kpis.clientes} l="Clientes" />
-        <Kpi icon={ShieldCheck} n={kpis.validados} l="Casos validados" />
+        <Kpi icon={FileText}   n={kpis.total} l="Informes" serie={serie.informes} />
+        <Kpi icon={Send}       n={kpis.enviados} l="Enviados" serie={serie.enviados} />
+        <Kpi icon={Clock3}     n={kpis.pendientes} l="Por enviar" serie={serie.porenviar} invertir />
+        <Kpi icon={Target}     n={`${kpis.pct}%`} l="Cumplimiento" serie={serie.cumplimiento} unidad="%" />
+        <Kpi icon={TrendingUp} n={kpis.horasProm != null ? `${kpis.horasProm} h` : "—"} l="Tiempo prom." serie={serie.tiempo} unidad="h" invertir />
+        <Kpi icon={Building2}  n={kpis.clientes} l="Clientes" serie={serie.clientes} />
+        <Kpi icon={ShieldCheck} n={kpis.validados} l="Casos validados" serie={serie.validados} />
       </div>
 
       {cargando && <p className="sub">Cargando datos…</p>}
@@ -465,12 +514,32 @@ export default function Tablero({ periodo, puedeValidar }: { periodo: string; pu
   );
 }
 
-function Kpi({ n, l, icon: Icon }: { n?: number | string; l: string; icon?: any }) {
+function Kpi({ n, l, icon: Icon, serie, unidad, invertir }: {
+  n?: number | string; l: string; icon?: any; serie?: number[]; unidad?: string; invertir?: boolean;
+}) {
+  const s = serie ?? [];
+  const path = sparkPath(s);
+  let delta: number | null = null;
+  if (s.length >= 2) delta = Math.round((s[s.length - 1] - s[s.length - 2]) * 10) / 10;
+  // "invertir": para métricas donde bajar es bueno (por enviar, tiempo).
+  const positivo = delta == null ? true : (invertir ? delta <= 0 : delta >= 0);
+  const color = delta == null || delta === 0 ? "#8994a8" : positivo ? "#22c55e" : "#ef4444";
+  const flecha = delta == null || delta === 0 ? "" : delta > 0 ? "▲" : "▼";
   return (
     <div className="kpi">
-      {Icon && <span className="ico"><Icon size={19} /></span>}
-      <div className="n">{n ?? "—"}</div>
-      <div className="l">{l}</div>
+      <div className="khead">
+        {Icon && <span className="ico"><Icon size={14} /></span>}
+        <span className="l">{l}</span>
+      </div>
+      <div className="krow">
+        <div className="n">{n ?? "—"}</div>
+        {path && <svg width={56} height={24} viewBox="0 0 56 24"><path d={path} fill="none" stroke={color} strokeWidth={1.8} /></svg>}
+      </div>
+      {delta != null && (
+        <div className="delta" style={{ color }}>
+          {flecha} {delta > 0 ? "+" : ""}{delta}{unidad ?? ""} vs mes anterior
+        </div>
+      )}
     </div>
   );
 }
