@@ -125,8 +125,9 @@ export default function Tablero({ periodo, puedeValidar }: { periodo: string; pu
     let vivo = true;
     (async () => {
       setCargando(true);
-      const { data: us } = await sb.from("usuarios").select("id, iniciales");
-      const mapU = new Map((us ?? []).map((u: any) => [u.id, u.iniciales]));
+      const { data: us } = await sb.from("usuarios").select("id, iniciales, nombre, apellido");
+      const mapU = new Map((us ?? []).map((u: any) =>
+        [u.id, [u.nombre, u.apellido].filter(Boolean).join(" ").trim() || u.iniciales]));
 
       const acc: any[] = [];
       for (let desde = 0; ; desde += 1000) {
@@ -329,7 +330,8 @@ export default function Tablero({ periodo, puedeValidar }: { periodo: string; pu
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={porAnalista} margin={{ left: -12, right: 8 }} barCategoryGap="22%">
               <CartesianGrid stroke={GRID} vertical={false} />
-              <XAxis dataKey="iniciales" tick={AXIS} axisLine={axisLine} tickLine={tickLine} />
+              <XAxis dataKey="iniciales" tick={AXIS} axisLine={axisLine} tickLine={tickLine}
+                tickFormatter={(v: string) => String(v).split(" ")[0]} interval={0} />
               <YAxis tick={AXIS} axisLine={axisLine} tickLine={tickLine} allowDecimals={false} width={30} />
               <Tooltip cursor={{ fill: "rgba(0,152,214,.05)" }} content={<TT />} />
               <Legend iconType="circle" iconSize={9} />
